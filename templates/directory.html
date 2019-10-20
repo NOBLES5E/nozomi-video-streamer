@@ -1,0 +1,17 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>{{ directory_path }}</title>
+    <link rel="stylesheet" type="text/css"
+          href="http://yegor256.github.io/tacit/tacit.min.css"/>
+</head>
+<body>
+<h1>{{ directory_path }}</h1>
+<ul>
+    {% for file in files %}
+    <li><a href="{{ file.url|e }}">{{ file.filename|escape }}</a></li>
+    {% endfor %}
+</ul>
+</body>
+</html>

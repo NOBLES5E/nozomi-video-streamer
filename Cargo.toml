@@ -1,0 +1,20 @@
+[package]
+name = "video-streamer-rs"
+version = "0.1.0"
+authors = ["Xiangru Lian <admin@mail.xrlian.com>"]
+edition = "2018"
+
+# See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
+
+[dependencies]
+fern = "0.5.8"
+structopt = "0.3.3"
+anyhow = "1.0.16"
+log = "0.4.8"
+actix-web = "1.0.8"
+askama = "0.8.0"
+futures = "0.1.29"
+tokio-process = "0.2.4"
+tokio = "0.1"
+tokio-io = "0.1"
+bytes = "0.4.12"
