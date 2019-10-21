@@ -51,7 +51,7 @@ fn index(req: HttpRequest, data: web::Data<Mutex<SiteData>>) -> HttpResponse {
         if directory_path == "." {
             directory_path = "root directory".parse().unwrap();
         }
-        let response = DirectoryTemplate {
+        let mut response = DirectoryTemplate {
             directory_path: directory_path,
             files: std::fs::read_dir(&realpath).unwrap().into_iter().map(
                 |entry| {
@@ -63,6 +63,7 @@ fn index(req: HttpRequest, data: web::Data<Mutex<SiteData>>) -> HttpResponse {
                 }
             ).collect(),
         };
+        response.files.sort_by(|a, b| { a.filename.cmp(&b.filename) });
         let response = response.render().unwrap();
         return HttpResponse::Ok().body(response);
     } else if realpath.is_file() {
