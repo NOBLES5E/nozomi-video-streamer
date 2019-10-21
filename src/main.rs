@@ -69,17 +69,24 @@ fn index(req: HttpRequest, data: web::Data<Mutex<SiteData>>) -> HttpResponse {
     } else if realpath.is_file() {
 //        let mut child = Command::new("cat").arg(path.to_str().unwrap()).stdout(Stdio::piped())
 //            .spawn_async().unwrap();
-        let mut child = Command::new("ffmpeg")
-            .arg("-i")
-            .arg(realpath.to_str().unwrap())
-            .arg("-cpu-used").arg("-8")
-            .arg("-deadline").arg("realtime")
-            .arg("-vcodec").arg("libx264")
-            .arg("-acodec").arg("aac")
-            .arg("-framerate").arg("15")
-            .arg("-f").arg("flv").arg("-")
-            .stdout(Stdio::piped())
-            .spawn_async().unwrap();
+        let mut child =
+            match realpath.extension().unwrap().to_str().unwrap() {
+                "mkv" | "mp4" => Command::new("ffmpeg")
+                    .arg("-i")
+                    .arg(realpath.to_str().unwrap())
+                    .arg("-cpu-used").arg("-8")
+                    .arg("-deadline").arg("realtime")
+                    .arg("-vcodec").arg("libx264")
+                    .arg("-acodec").arg("aac")
+                    .arg("-framerate").arg("15")
+                    .arg("-f").arg("flv").arg("-")
+                    .stdout(Stdio::piped())
+                    .spawn_async().unwrap(),
+                _ => Command::new("cat")
+                    .arg(realpath.to_str().unwrap())
+                    .stdout(Stdio::piped())
+                    .spawn_async().unwrap(),
+            };
         let stdout = child.stdout().take().unwrap();
         let mut reader = FramedRead::new(stdout, BytesCodec::new());
         let result = reader.map(|mut x| { bytes::Bytes::from(x) });
