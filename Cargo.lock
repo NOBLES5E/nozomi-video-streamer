@@ -1746,6 +1746,7 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 name = "video-streamer-rs"
 version = "0.1.0"
 dependencies = [
+ "actix-http 0.2.10 (registry+https://github.com/rust-lang/crates.io-index)",
  "actix-web 1.0.8 (registry+https://github.com/rust-lang/crates.io-index)",
  "anyhow 1.0.16 (registry+https://github.com/rust-lang/crates.io-index)",
  "askama 0.8.0 (registry+https://github.com/rust-lang/crates.io-index)",
