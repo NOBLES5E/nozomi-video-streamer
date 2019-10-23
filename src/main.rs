@@ -108,7 +108,7 @@ fn index(req: HttpRequest, data: web::Data<Mutex<SiteData>>) -> HttpResponse {
     if path.to_str().unwrap().len() == 0 {
         path = PathBuf::from(".");
     }
-    log::info!("{:?}", path);
+    log::info!("requested path {:?}", path);
     let realpath = data.lock().unwrap().serving_dir.join(&path);
     if realpath.is_dir() {
         let mut directory_path = path.to_str().unwrap().to_owned();
