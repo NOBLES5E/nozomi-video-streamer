@@ -39,8 +39,71 @@ struct SiteData {
     serving_dir: PathBuf,
 }
 
+/// See https://ffmpeg.org/ffmpeg-filters.html#toc-Notes-on-filtergraph-escaping
+fn ffmpeg_filtergraph_escaping(raw_string: &str) -> String {
+    // first level
+    let result = raw_string.replace(r#"'"#, r#"\'"#);
+    let result = raw_string.replace(r#":"#, r#"\:"#);
+    // second level
+    let result = raw_string.replace(r#"\"#, r#"\\"#);
+    let result = raw_string.replace(r#"'"#, r#"\'"#);
+    let result = raw_string.replace(r#"["#, r#"\["#);
+    let result = raw_string.replace(r#"]"#, r#"\]"#);
+    let result = raw_string.replace(r#","#, r#"\,"#);
+    let result = raw_string.replace(r#";"#, r#"\;"#);
+    return result;
+}
+
+fn file_to_stream(path: PathBuf, mode: &str) -> Result<impl Stream<Item=bytes::Bytes, Error=impl actix_http::error::ResponseError>> {
+    let mut child = match mode {
+        "convert" => Command::new("ffmpeg")
+            .arg("-i")
+            .arg(path.to_str().unwrap())
+            .arg("-cpu-used").arg("-8")
+            .arg("-deadline").arg("realtime")
+            .arg("-vcodec").arg("libx264")
+            .arg("-acodec").arg("aac")
+            .arg("-framerate").arg("15")
+            .arg("-f").arg("flv").arg("-")
+            .stdout(Stdio::piped())
+            .spawn_async().unwrap(),
+        "convert_self_subtitle" => Command::new("ffmpeg")
+            .arg("-i")
+            .arg(path.to_str().unwrap())
+            .arg("-vf").arg(ffmpeg_filtergraph_escaping(format!("subtitles={}", path.to_str().unwrap()).as_str()))
+            .arg("-cpu-used").arg("-8")
+            .arg("-deadline").arg("realtime")
+            .arg("-vcodec").arg("libx264")
+            .arg("-acodec").arg("aac")
+            .arg("-framerate").arg("15")
+            .arg("-f").arg("flv").arg("-")
+            .stdout(Stdio::piped())
+            .spawn_async().unwrap(),
+        "raw" => Command::new("cat")
+            .arg(path.to_str().unwrap())
+            .stdout(Stdio::piped())
+            .spawn_async().unwrap(),
+        _ => { return Err(anyhow::anyhow!("invalid mode type")); }
+    };
+    let stdout = child.stdout().take().unwrap();
+    let mut reader = FramedRead::new(stdout, BytesCodec::new());
+    let result = reader.map(|mut x| { bytes::Bytes::from(x) });
+    tokio::spawn(child.map(|status| {}).map_err(|e| { log::error!("error {:?}", e) }));
+    return Ok(result);
+}
+
 fn index(req: HttpRequest, data: web::Data<Mutex<SiteData>>) -> HttpResponse {
     let mut path: PathBuf = req.match_info().query("filename").parse().unwrap();
+    let query_string = req.query_string();
+    let mode = match query_string {
+        "" => "raw",
+        _ => {
+            match query_string.starts_with("mode=") {
+                true => &query_string[5..query_string.len()],
+                false => panic!("invalid query string"),
+            }
+        }
+    };
     if path.to_str().unwrap().len() == 0 {
         path = PathBuf::from(".");
     }
@@ -69,28 +132,7 @@ fn index(req: HttpRequest, data: web::Data<Mutex<SiteData>>) -> HttpResponse {
     } else if realpath.is_file() {
 //        let mut child = Command::new("cat").arg(path.to_str().unwrap()).stdout(Stdio::piped())
 //            .spawn_async().unwrap();
-        let mut child =
-            match realpath.extension().unwrap().to_str().unwrap() {
-                "mkv" | "mp4" => Command::new("ffmpeg")
-                    .arg("-i")
-                    .arg(realpath.to_str().unwrap())
-                    .arg("-cpu-used").arg("-8")
-                    .arg("-deadline").arg("realtime")
-                    .arg("-vcodec").arg("libx264")
-                    .arg("-acodec").arg("aac")
-                    .arg("-framerate").arg("15")
-                    .arg("-f").arg("flv").arg("-")
-                    .stdout(Stdio::piped())
-                    .spawn_async().unwrap(),
-                _ => Command::new("cat")
-                    .arg(realpath.to_str().unwrap())
-                    .stdout(Stdio::piped())
-                    .spawn_async().unwrap(),
-            };
-        let stdout = child.stdout().take().unwrap();
-        let mut reader = FramedRead::new(stdout, BytesCodec::new());
-        let result = reader.map(|mut x| { bytes::Bytes::from(x) });
-        tokio::spawn(child.map(|status| {}).map_err(|e| { log::error!("error {:?}", e) }));
+        let result = file_to_stream(realpath, mode).expect("cannot convert file to byte stream");
         return HttpResponse::Ok().content_type("application/octet-stream").streaming(result);
     } else {
         return HttpResponse::BadRequest().body("no such file or directory");
