@@ -43,14 +43,15 @@ struct SiteData {
 fn ffmpeg_filtergraph_escaping(raw_string: &str) -> String {
     // first level
     let result = raw_string.replace(r#"'"#, r#"\'"#);
-    let result = raw_string.replace(r#":"#, r#"\:"#);
-    // second level
-    let result = raw_string.replace(r#"\"#, r#"\\"#);
-    let result = raw_string.replace(r#"'"#, r#"\'"#);
-    let result = raw_string.replace(r#"["#, r#"\["#);
-    let result = raw_string.replace(r#"]"#, r#"\]"#);
-    let result = raw_string.replace(r#","#, r#"\,"#);
-    let result = raw_string.replace(r#";"#, r#"\;"#);
+    let result = result.replace(r#":"#, r#"\:"#);
+    // second levresult
+    let result = result.replace(r#"\"#, r#"\\"#);
+    let result = result.replace(r#"'"#, r#"\'"#);
+    let result = result.replace(r#"["#, r#"\["#);
+    let result = result.replace(r#"]"#, r#"\]"#);
+    let result = result.replace(r#","#, r#"\,"#);
+    let result = result.replace(r#";"#, r#"\;"#);
+    log::info!("ffmpeg filter graph {:?}", result);
     return result;
 }
 
