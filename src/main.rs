@@ -133,8 +133,8 @@ fn index(req: HttpRequest, data: web::Data<Mutex<SiteData>>, query_params: Optio
 //        let mut child = Command::new("cat").arg(path.to_str().unwrap()).stdout(Stdio::piped())
 //            .spawn_async().unwrap();
         let result = file_to_stream(realpath,
-                                    query_params.unwrap().mode.as_ref(),
-                                    query_params.unwrap().bitrate.as_ref()).expect("cannot convert file to byte stream");
+                                    query_params.as_ref().unwrap().mode.as_ref(),
+                                    query_params.as_ref().unwrap().bitrate.as_ref()).expect("cannot convert file to byte stream");
         return HttpResponse::Ok().content_type("application/octet-stream").streaming(result);
     } else {
         return HttpResponse::BadRequest().body("no such file or directory");
