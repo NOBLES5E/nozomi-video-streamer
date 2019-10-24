@@ -103,13 +103,11 @@ struct QueryParams {
     bitrate: String,
 }
 
-fn index(req: HttpRequest, data: web::Data<Mutex<SiteData>>, query_params: web::Query<QueryParams>) -> HttpResponse {
+fn index(req: HttpRequest, data: web::Data<Mutex<SiteData>>, query_params: Option<web::Query<QueryParams>>) -> HttpResponse {
     let mut path: PathBuf = req.match_info().query("filename").parse().unwrap();
-    let query_string = req.query_string();
     if path.to_str().unwrap().len() == 0 {
         path = PathBuf::from(".");
     }
-    log::info!("requested path {:?}", path);
     let realpath = data.lock().unwrap().serving_dir.join(&path);
     if realpath.is_dir() {
         let mut directory_path = path.to_str().unwrap().to_owned();
@@ -134,7 +132,9 @@ fn index(req: HttpRequest, data: web::Data<Mutex<SiteData>>, query_params: web::
     } else if realpath.is_file() {
 //        let mut child = Command::new("cat").arg(path.to_str().unwrap()).stdout(Stdio::piped())
 //            .spawn_async().unwrap();
-        let result = file_to_stream(realpath, query_params.mode.as_ref(), query_params.bitrate.as_ref()).expect("cannot convert file to byte stream");
+        let result = file_to_stream(realpath,
+                                    query_params.unwrap().mode.as_ref(),
+                                    query_params.unwrap().bitrate.as_ref()).expect("cannot convert file to byte stream");
         return HttpResponse::Ok().content_type("application/octet-stream").streaming(result);
     } else {
         return HttpResponse::BadRequest().body("no such file or directory");
