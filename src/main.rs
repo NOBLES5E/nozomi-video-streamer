@@ -72,9 +72,9 @@ fn file_to_stream(path: PathBuf, query_params: Option<QueryParams>) -> Result<im
             let start_time = &query_p.start_time.unwrap_or("00:00:00".parse()?);
             match mode {
                 "convert" => Command::new("ffmpeg")
+                    .arg("-ss").arg(start_time)
                     .arg("-i")
                     .arg(path.to_str().unwrap())
-                    .arg("-ss").arg(start_time)
                     .arg("-b:v").arg(bitrate)
                     .arg("-cpu-used").arg("-8")
                     .arg("-deadline").arg("realtime")
@@ -85,9 +85,9 @@ fn file_to_stream(path: PathBuf, query_params: Option<QueryParams>) -> Result<im
                     .stdout(Stdio::piped())
                     .spawn_async().unwrap(),
                 "convert_self_subtitle" => Command::new("ffmpeg")
+                    .arg("-ss").arg(start_time)
                     .arg("-i")
                     .arg(path.to_str().unwrap())
-                    .arg("-ss").arg(start_time)
                     .arg("-vf").arg(ffmpeg_filtergraph_escaping(format!("subtitles={}", path.to_str().unwrap()).as_str()))
                     .arg("-b:v").arg(bitrate)
                     .arg("-cpu-used").arg("-8")
