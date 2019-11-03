@@ -14,6 +14,7 @@ use std::io::Bytes;
 use std::iter::once;
 use tokio::prelude::Future;
 use serde::Deserialize;
+use std::ops::Deref;
 
 #[derive(Debug, StructOpt, Clone)]
 #[structopt(name = "video-streamer-rs")]
@@ -56,38 +57,52 @@ fn ffmpeg_filtergraph_escaping(raw_string: &str) -> String {
     return result;
 }
 
-fn file_to_stream(path: PathBuf, mode: &str, bitrate: &str) -> Result<impl Stream<Item=bytes::Bytes, Error=impl actix_http::error::ResponseError>> {
-    let mut child = match mode {
-        "convert" => Command::new("ffmpeg")
-            .arg("-i")
-            .arg(path.to_str().unwrap())
-            .arg("-b:v").arg(bitrate)
-            .arg("-cpu-used").arg("-8")
-            .arg("-deadline").arg("realtime")
-            .arg("-vcodec").arg("libx264")
-            .arg("-acodec").arg("aac")
-            .arg("-framerate").arg("15")
-            .arg("-f").arg("flv").arg("-")
-            .stdout(Stdio::piped())
-            .spawn_async().unwrap(),
-        "convert_self_subtitle" => Command::new("ffmpeg")
-            .arg("-i")
-            .arg(path.to_str().unwrap())
-            .arg("-vf").arg(ffmpeg_filtergraph_escaping(format!("subtitles={}", path.to_str().unwrap()).as_str()))
-            .arg("-b:v").arg(bitrate)
-            .arg("-cpu-used").arg("-8")
-            .arg("-deadline").arg("realtime")
-            .arg("-vcodec").arg("libx264")
-            .arg("-acodec").arg("aac")
-            .arg("-framerate").arg("15")
-            .arg("-f").arg("flv").arg("-")
-            .stdout(Stdio::piped())
-            .spawn_async().unwrap(),
-        "" => Command::new("cat")
-            .arg(path.to_str().unwrap())
-            .stdout(Stdio::piped())
-            .spawn_async().unwrap(),
-        _ => { return Err(anyhow::anyhow!("invalid mode type")); }
+#[derive(Deserialize)]
+struct QueryParams {
+    mode: String,
+    bitrate: String,
+}
+
+fn file_to_stream(path: PathBuf, query_params: Option<QueryParams>) -> Result<impl Stream<Item=bytes::Bytes, Error=impl actix_http::error::ResponseError>> {
+    let mut child = match query_params {
+        Some(query_p) => {
+            let mode = &query_p.mode[..];
+            let bitrate = &query_p.bitrate[..];
+            match mode {
+                "convert" => Command::new("ffmpeg")
+                    .arg("-i")
+                    .arg(path.to_str().unwrap())
+                    .arg("-b:v").arg(bitrate)
+                    .arg("-cpu-used").arg("-8")
+                    .arg("-deadline").arg("realtime")
+                    .arg("-vcodec").arg("libx264")
+                    .arg("-acodec").arg("aac")
+                    .arg("-framerate").arg("15")
+                    .arg("-f").arg("flv").arg("-")
+                    .stdout(Stdio::piped())
+                    .spawn_async().unwrap(),
+                "convert_self_subtitle" => Command::new("ffmpeg")
+                    .arg("-i")
+                    .arg(path.to_str().unwrap())
+                    .arg("-vf").arg(ffmpeg_filtergraph_escaping(format!("subtitles={}", path.to_str().unwrap()).as_str()))
+                    .arg("-b:v").arg(bitrate)
+                    .arg("-cpu-used").arg("-8")
+                    .arg("-deadline").arg("realtime")
+                    .arg("-vcodec").arg("libx264")
+                    .arg("-acodec").arg("aac")
+                    .arg("-framerate").arg("15")
+                    .arg("-f").arg("flv").arg("-")
+                    .stdout(Stdio::piped())
+                    .spawn_async().unwrap(),
+                _ => { return Err(anyhow::anyhow!("invalid mode type")); }
+            }
+        }
+        None => {
+            Command::new("cat")
+                .arg(path.to_str().unwrap())
+                .stdout(Stdio::piped())
+                .spawn_async().unwrap()
+        }
     };
     let stdout = child.stdout().take().unwrap();
     let mut reader = FramedRead::new(stdout, BytesCodec::new());
@@ -96,12 +111,6 @@ fn file_to_stream(path: PathBuf, mode: &str, bitrate: &str) -> Result<impl Strea
     return Ok(result);
 }
 
-
-#[derive(Deserialize)]
-struct QueryParams {
-    mode: String,
-    bitrate: String,
-}
 
 fn index(req: HttpRequest, data: web::Data<Mutex<SiteData>>, query_params: Option<web::Query<QueryParams>>) -> HttpResponse {
     let mut path: PathBuf = req.match_info().query("filename").parse().unwrap();
@@ -132,10 +141,9 @@ fn index(req: HttpRequest, data: web::Data<Mutex<SiteData>>, query_params: Optio
     } else if realpath.is_file() {
 //        let mut child = Command::new("cat").arg(path.to_str().unwrap()).stdout(Stdio::piped())
 //            .spawn_async().unwrap();
-        let result = file_to_stream(realpath,
-                                    query_params.unwrap().mode.as_ref(),
-                                    query_params.unwrap().bitrate.as_ref()).expect("cannot convert file to byte stream");
-        return HttpResponse::Ok().content_type("application/octet-stream").streaming(result);
+        let params = query_params.map(|q| q.into_inner() );
+        let result = file_to_stream(realpath, params);
+        return HttpResponse::Ok().content_type("application/octet-stream").streaming(result.unwrap());
     } else {
         return HttpResponse::BadRequest().body("no such file or directory");
     }
