@@ -61,6 +61,7 @@ fn ffmpeg_filtergraph_escaping(raw_string: &str) -> String {
 struct QueryParams {
     mode: String,
     bitrate: String,
+    start_time: Option<String>,
 }
 
 fn file_to_stream(path: PathBuf, query_params: Option<QueryParams>) -> Result<impl Stream<Item=bytes::Bytes, Error=impl actix_http::error::ResponseError>> {
@@ -68,10 +69,12 @@ fn file_to_stream(path: PathBuf, query_params: Option<QueryParams>) -> Result<im
         Some(query_p) => {
             let mode = &query_p.mode[..];
             let bitrate = &query_p.bitrate[..];
+            let start_time = &query_p.start_time.unwrap_or("00:00:00".parse()?);
             match mode {
                 "convert" => Command::new("ffmpeg")
                     .arg("-i")
                     .arg(path.to_str().unwrap())
+                    .arg("-ss").arg(start_time)
                     .arg("-b:v").arg(bitrate)
                     .arg("-cpu-used").arg("-8")
                     .arg("-deadline").arg("realtime")
@@ -84,6 +87,7 @@ fn file_to_stream(path: PathBuf, query_params: Option<QueryParams>) -> Result<im
                 "convert_self_subtitle" => Command::new("ffmpeg")
                     .arg("-i")
                     .arg(path.to_str().unwrap())
+                    .arg("-ss").arg(start_time)
                     .arg("-vf").arg(ffmpeg_filtergraph_escaping(format!("subtitles={}", path.to_str().unwrap()).as_str()))
                     .arg("-b:v").arg(bitrate)
                     .arg("-cpu-used").arg("-8")
