@@ -1,4 +1,6 @@
-image: docker:18
+image: docker:19.03.1
+services:
+  - docker:19.03.1-dind
 
 stages:
   - build
@@ -11,6 +13,7 @@ variables:
   CONTAINER_RELEASE_IMAGE: $CI_REGISTRY_IMAGE:latest
 
 before_script:
+  - docker info
   # - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
   - echo -n $CI_JOB_TOKEN | docker login -u gitlab-ci-token --password-stdin $CI_REGISTRY
 
