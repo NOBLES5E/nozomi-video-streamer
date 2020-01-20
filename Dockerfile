@@ -1,4 +1,4 @@
-FROM rust:latest
+FROM rustlang:nightly-stretch
 
 WORKDIR /app
 
