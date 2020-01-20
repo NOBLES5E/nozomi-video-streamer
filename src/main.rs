@@ -203,6 +203,7 @@ mod filters {
                 }
             }
         ).untuple_one()
+    }
 }
 
 #[tokio::main]
