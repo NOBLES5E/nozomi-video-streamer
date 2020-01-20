@@ -1,23 +1,29 @@
+#![feature(async_closure)]
+
 use anyhow::Result;
+use std::io::Write;
 use structopt::StructOpt;
 use log;
-use actix_web::{HttpServer, web, HttpRequest, App, HttpResponse, Responder, Either};
 use std::path::PathBuf;
-use std::sync::Mutex;
 use askama::{Template, Error};
-use futures::{Stream, IntoStream};
-use actix_web::body::{Body, BodyStream};
-use tokio_process::{ChildStdout, CommandExt};
-use std::process::{Stdio, Command};
-use tokio::codec::{FramedRead, BytesCodec};
 use std::io::Bytes;
 use std::iter::once;
-use tokio::prelude::Future;
-use serde::Deserialize;
+use std::sync::{Arc, Mutex};
 use std::ops::Deref;
+use warp::Filter;
+use warp::filters::path::FullPath;
+use chrono::Local;
+use std::convert::Infallible;
+use std::net::ToSocketAddrs;
+use serde_derive::Deserialize;
+use async_std::prelude::*;
+use futures_util::StreamExt;
+use tokio::process::Command;
+use bytes::Buf;
+use std::process::Stdio;
 
 #[derive(Debug, StructOpt, Clone)]
-#[structopt(name = "video-streamer-rs")]
+#[structopt()]
 struct Cli {
     #[structopt(long, default_value = "0.0.0.0:4000")]
     bind_address: String,
@@ -37,10 +43,6 @@ struct DirectoryTemplate {
     files: Vec<DirectoryFile>,
 }
 
-struct SiteData {
-    serving_dir: PathBuf,
-}
-
 /// See https://ffmpeg.org/ffmpeg-filters.html#toc-Notes-on-filtergraph-escaping
 fn ffmpeg_filtergraph_escaping(raw_string: &str) -> String {
     // first level
@@ -57,6 +59,7 @@ fn ffmpeg_filtergraph_escaping(raw_string: &str) -> String {
     return result;
 }
 
+
 #[derive(Deserialize)]
 struct QueryParams {
     mode: String,
@@ -64,116 +67,180 @@ struct QueryParams {
     start_time: Option<String>,
 }
 
-fn file_to_stream(path: PathBuf, query_params: Option<QueryParams>) -> Result<impl Stream<Item=bytes::Bytes, Error=impl actix_http::error::ResponseError>> {
-    let mut child = match query_params {
-        Some(query_p) => {
-            let mode = &query_p.mode[..];
-            let bitrate = &query_p.bitrate[..];
-            let start_time = &query_p.start_time.unwrap_or("00:00:00".parse()?);
-            match mode {
-                "convert" => Command::new("ffmpeg")
-                    .arg("-ss").arg(start_time)
-                    .arg("-i")
-                    .arg(path.to_str().unwrap())
-                    .arg("-b:v").arg(bitrate)
-                    .arg("-cpu-used").arg("-8")
-                    .arg("-deadline").arg("realtime")
-                    .arg("-vcodec").arg("libx264")
-                    .arg("-acodec").arg("aac")
-                    .arg("-framerate").arg("15")
-                    .arg("-f").arg("flv").arg("-")
-                    .stdout(Stdio::piped())
-                    .spawn_async().unwrap(),
-                "convert_self_subtitle" => Command::new("ffmpeg")
-                    .arg("-ss").arg(start_time)
-                    .arg("-i")
-                    .arg(path.to_str().unwrap())
-                    .arg("-vf").arg(ffmpeg_filtergraph_escaping(format!("subtitles={}", path.to_str().unwrap()).as_str()))
-                    .arg("-b:v").arg(bitrate)
-                    .arg("-cpu-used").arg("-8")
-                    .arg("-deadline").arg("realtime")
-                    .arg("-vcodec").arg("libx264")
-                    .arg("-acodec").arg("aac")
-                    .arg("-framerate").arg("15")
-                    .arg("-f").arg("flv").arg("-")
-                    .stdout(Stdio::piped())
-                    .spawn_async().unwrap(),
-                _ => { return Err(anyhow::anyhow!("invalid mode type")); }
-            }
-        }
-        None => {
-            Command::new("cat")
+fn file_to_stream(path: PathBuf, query_p: QueryParams) -> Result<impl Stream<Item=Result<bytes::Bytes, std::io::Error>>> {
+    let mut child = {
+        let mode = &query_p.mode[..];
+        let bitrate = &query_p.bitrate[..];
+        let start_time = &query_p.start_time.unwrap_or("00:00:00".parse()?);
+        match mode {
+            "convert" => Command::new("ffmpeg")
+                .arg("-ss").arg(start_time)
+                .arg("-i")
                 .arg(path.to_str().unwrap())
+                .arg("-b:v").arg(bitrate)
+                .arg("-cpu-used").arg("-8")
+                .arg("-deadline").arg("realtime")
+                .arg("-vcodec").arg("libx264")
+                .arg("-acodec").arg("aac")
+                .arg("-framerate").arg("15")
+                .arg("-f").arg("flv").arg("-")
                 .stdout(Stdio::piped())
-                .spawn_async().unwrap()
+                .spawn().expect("cannot spawn command"),
+            "convert_self_subtitle" => Command::new("ffmpeg")
+                .arg("-ss").arg(start_time)
+                .arg("-i")
+                .arg(path.to_str().unwrap())
+                .arg("-vf").arg(ffmpeg_filtergraph_escaping(format!("subtitles={}", path.to_str().unwrap()).as_str()))
+                .arg("-b:v").arg(bitrate)
+                .arg("-cpu-used").arg("-8")
+                .arg("-deadline").arg("realtime")
+                .arg("-vcodec").arg("libx264")
+                .arg("-acodec").arg("aac")
+                .arg("-framerate").arg("15")
+                .arg("-f").arg("flv").arg("-")
+                .stdout(Stdio::piped())
+                .spawn().expect("cannot spawn command"),
+            _ => { return Err(anyhow::anyhow!("invalid mode type")); }
         }
     };
-    let stdout = child.stdout().take().unwrap();
-    let mut reader = FramedRead::new(stdout, BytesCodec::new());
-    let result = reader.map(|mut x| { bytes::Bytes::from(x) });
-    tokio::spawn(child.map(|status| {}).map_err(|e| { log::error!("error {:?}", e) }));
+    let stdout = child.stdout.take().expect("cannot read child stdout");
+    let reader = tokio_util::codec::FramedRead::new(stdout, tokio_util::codec::BytesCodec::new());
+    let result = reader.map(|mut x| { x.map( |mut y: bytes::BytesMut| bytes::Bytes::from(y.to_bytes())) });
+    tokio::spawn(
+        async {
+            let status = child.await.expect("child process encountered an error");
+        }
+    );
     return Ok(result);
 }
 
 
-fn index(req: HttpRequest, data: web::Data<Mutex<SiteData>>, query_params: Option<web::Query<QueryParams>>) -> HttpResponse {
-    let mut path: PathBuf = req.match_info().query("filename").parse().unwrap();
-    if path.to_str().unwrap().len() == 0 {
-        path = PathBuf::from(".");
-    }
+async fn serve_dir(path: FullPath, data: SharedAppData) -> Result<impl warp::Reply, Infallible> {
+    let path: PathBuf = percent_encoding::percent_decode_str(&path.as_str()[1..]).decode_utf8().expect("cannot decode url").parse()?;
+    log::info!("path: {:?}", path);
     let realpath = data.lock().unwrap().serving_dir.join(&path);
-    if realpath.is_dir() {
-        let mut directory_path = path.to_str().unwrap().to_owned();
-        if directory_path == "." {
-            directory_path = "root directory".parse().unwrap();
-        }
-        let mut response = DirectoryTemplate {
-            directory_path: directory_path,
-            files: std::fs::read_dir(&realpath).unwrap().into_iter().map(
-                |entry| {
-                    let filename = entry.unwrap().file_name().to_str().unwrap().to_owned();
-                    DirectoryFile {
-                        filename: filename.clone(),
-                        url: path.join(filename).to_str().unwrap().to_owned(),
-                    }
+    log::info!("realpath: {:?}", realpath);
+    let mut directory_path = path.to_str().unwrap().to_owned();
+    if directory_path == "" {
+        directory_path = "root directory".to_string();
+    }
+    let mut response = DirectoryTemplate {
+        directory_path: directory_path,
+        files: std::fs::read_dir(&realpath).expect("cannot read directory").into_iter().map(
+            |entry| {
+                let filename = entry.expect("cannot read file").file_name().to_str().unwrap().to_owned();
+                DirectoryFile {
+                    filename: filename.clone(),
+                    url: path.join(filename).to_str().unwrap().to_owned(),
                 }
-            ).collect(),
-        };
-        response.files.sort_by(|a, b| { a.filename.cmp(&b.filename) });
-        let response = response.render().unwrap();
-        return HttpResponse::Ok().body(response);
-    } else if realpath.is_file() {
-//        let mut child = Command::new("cat").arg(path.to_str().unwrap()).stdout(Stdio::piped())
-//            .spawn_async().unwrap();
-        let params = query_params.map(|q| q.into_inner() );
-        let result = file_to_stream(realpath, params);
-        return HttpResponse::Ok().content_type("application/octet-stream").streaming(result.unwrap());
-    } else {
-        return HttpResponse::BadRequest().body("no such file or directory");
+            }
+        ).collect(),
+    };
+    response.files.sort_by(|a, b| { a.filename.cmp(&b.filename) });
+    let response = response.render().unwrap();
+    return Ok(hyper::Response::builder().status(hyper::StatusCode::OK).body(response).unwrap());
+}
+
+async fn serve_file(path: FullPath, data: SharedAppData) -> Result<impl warp::Reply, Infallible> {
+    let path: PathBuf = percent_encoding::percent_decode_str(&path.as_str()[1..]).decode_utf8().expect("cannot decode url").parse()?;
+    let realpath = data.lock().unwrap().serving_dir.join(&path);
+    let file = async_std::fs::File::open(realpath).await.expect("cannot open file");
+    return Ok(hyper::Response::builder().status(hyper::StatusCode::OK).body(hyper::Body::wrap_stream(
+        file.bytes().map(|x| { x.map(|y| bytes::Bytes::from(vec![y])) })
+    )).expect("cannot build response"));
+}
+
+async fn serve_convert_file(path: FullPath, data: SharedAppData, params: QueryParams) -> Result<impl warp::Reply, Infallible> {
+    log::info!("serving converted file");
+    let path: PathBuf = percent_encoding::percent_decode_str(&path.as_str()[1..]).decode_utf8().expect("cannot decode url").parse()?;
+    let realpath = data.lock().unwrap().serving_dir.join(&path);
+    return Ok(hyper::Response::builder().status(hyper::StatusCode::OK)
+        .body(hyper::Body::wrap_stream(file_to_stream(realpath, params).expect("cannot convert file to stream"))).unwrap()
+    );
+}
+
+pub struct AppData {
+    serving_dir: PathBuf
+}
+
+type SharedAppData = Arc<Mutex<AppData>>;
+
+mod filters {
+    use crate::{AppData, SharedAppData};
+    use warp::{Filter, Rejection};
+    use std::convert::Infallible;
+    use warp::filters::path::FullPath;
+    use std::path::PathBuf;
+
+    pub fn with_shared_info(db: SharedAppData) -> impl Filter<Extract=(SharedAppData, ), Error=Infallible> + Clone {
+        warp::any().map(move || {
+            db.clone()
+        })
+    }
+
+    pub fn is_dir(db: SharedAppData) -> impl Filter<Extract=(), Error=Rejection> + Clone {
+        warp::path::full().and(with_shared_info(db)).and_then(
+            async move |path: FullPath, data: SharedAppData| {
+                let path: PathBuf = percent_encoding::percent_decode_str(&path.as_str()[1..]).decode_utf8().expect("cannot decode url").parse()?;
+                let realpath = data.lock().unwrap().serving_dir.join(&path);
+                match realpath.is_dir() {
+                    true => Ok(()),
+                    false => Err(warp::reject::reject()),
+                }
+            }
+        ).untuple_one()
+    }
+
+    pub fn is_file(db: SharedAppData) -> impl Filter<Extract=(), Error=Rejection> + Clone {
+        warp::path::full().and(with_shared_info(db)).and_then(
+            async move |path: FullPath, data: SharedAppData| {
+                let path: PathBuf = percent_encoding::percent_decode_str(&path.as_str()[1..]).decode_utf8().expect("cannot decode url").parse()?;
+                let realpath = data.lock().unwrap().serving_dir.join(&path);
+                log::info!("realpath {:?}", realpath);
+                match realpath.is_file() {
+                    true => Ok(()),
+                    false => Err(warp::reject::reject()),
+                }
+            }
+        ).untuple_one()
     }
 }
 
-fn main() -> Result<()> {
+#[tokio::main]
+async fn main() -> Result<()> {
     let args: Cli = Cli::from_args();
-    fern::Dispatch::new()
-        .chain(std::io::stderr())
-        .level(log::LevelFilter::Info)
-        .level_for("video-streamer-rs", log::LevelFilter::Debug)
-        .apply().expect("cannot initialize fern logger");
+    env_logger::Builder::from_env("LOG_LEVEL")
+        .format(|buf, record| {
+            writeln!(buf,
+                     "{} [{}] [{}:{}] - {}",
+                     Local::now().format("%Y-%m-%dT%H:%M:%S"),
+                     record.level(),
+                     record.file().unwrap_or(""),
+                     record.line().unwrap_or(0),
+                     record.args()
+            )
+        }).init();
 
-    let data = actix_web::web::Data::new(
+    let data = Arc::new(
         Mutex::new(
-            SiteData {
-                serving_dir: args.serving_dir.clone().parse().unwrap()
+            AppData {
+                serving_dir: args.serving_dir.parse()?
             }
         )
     );
-
-    let serving_dir = args.serving_dir.clone();
-    HttpServer::new(move || {
-        App::new()
-            .register_data(data.clone())
-            .route("/{filename:.*}", web::get().to(index))
-    }).bind(args.bind_address).unwrap().run().unwrap();
+    let dir_route = warp::path::full()
+        .and(filters::is_dir(data.clone()))
+        .and(filters::with_shared_info(data.clone()))
+        .and_then(serve_dir);
+    let file_route = warp::path::full()
+        .and(filters::is_file(data.clone()))
+        .and(filters::with_shared_info(data.clone()))
+        .and_then(serve_file);
+    let convert_file_route = warp::path::full()
+        .and(filters::is_file(data.clone()))
+        .and(filters::with_shared_info(data.clone()))
+        .and(warp::query::<QueryParams>())
+        .and_then(serve_convert_file);
+    warp::serve(dir_route.or(convert_file_route).or(file_route)).run(args.bind_address.to_socket_addrs()?.next().expect("cannot parse bind addr")).await;
     Ok(())
 }
