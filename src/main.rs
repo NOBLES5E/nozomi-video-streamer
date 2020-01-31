@@ -80,6 +80,7 @@ async fn file_to_stream(path: PathBuf, post_params: PostParams) -> Result<impl S
         let mut subtitle = post_params.subtitle.clone();
         if let Some(upload_subtitle) = post_params.upload_subtitle_file {
             let temp_sub_path = temp_dir.path().join("upload.ass");
+            let upload_subtitle = base64::decode(&upload_subtitle)?;
             std::fs::write(&temp_sub_path, upload_subtitle)?;
             subtitle = Some((&temp_sub_path).to_str().ok_or(anyhow::anyhow!("path to str failed"))?.to_string());
         };
