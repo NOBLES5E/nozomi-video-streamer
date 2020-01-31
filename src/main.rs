@@ -78,6 +78,11 @@ async fn file_to_stream(path: PathBuf, post_params: PostParams) -> Result<impl S
     let temp_dir = tempfile::tempdir()?;
     let mut child = {
         let mut subtitle = post_params.subtitle.clone();
+        if let Some(subtitle) = &subtitle {
+            if subtitle.ne("self") {
+                anyhow::bail!("invalid subtitle mode")
+            }
+        }
         if let Some(upload_subtitle) = post_params.upload_subtitle_file {
             let temp_sub_path = temp_dir.path().join("upload.ass");
             let upload_subtitle = base64::decode(&upload_subtitle)?;
