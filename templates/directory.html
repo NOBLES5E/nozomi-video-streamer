@@ -10,7 +10,9 @@
 <h1>{{ directory_path }}</h1>
 <ul>
     {% for file in files %}
-    <li><a href="{{ file.url|e }}">{{ file.filename|escape }}</a></li>
+    <li><a href="{{ file.url|urlencode }}">{{ file.filename|escape }}</a>
+        <a href="{{ file.streaming_url }}">[stream]</a>
+    </li>
     {% endfor %}
 </ul>
 </body>
