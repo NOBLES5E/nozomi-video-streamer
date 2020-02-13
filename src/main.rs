@@ -5,6 +5,7 @@ use std::io::Write;
 use structopt::StructOpt;
 use log;
 use std::path::PathBuf;
+use askama::{Template, Error};
 use std::io::Bytes;
 use std::iter::once;
 use std::sync::{Arc, Mutex};
@@ -14,7 +15,7 @@ use warp::filters::path::FullPath;
 use chrono::{Local, Timelike};
 use std::convert::Infallible;
 use std::net::ToSocketAddrs;
-use serde_derive::{Deserialize, Serialize};
+use serde_derive::Deserialize;
 use async_std::prelude::*;
 use futures_util::StreamExt;
 use tokio::process::Command;
@@ -22,7 +23,6 @@ use bytes::Buf;
 use std::process::Stdio;
 use std::str::FromStr;
 use tokio::time::Duration;
-use tera::{Context, Tera};
 
 #[derive(Debug, StructOpt, Clone)]
 #[structopt()]
@@ -33,11 +33,16 @@ struct Cli {
     serving_dir: String,
 }
 
-#[derive(Serialize)]
 struct DirectoryFile {
     filename: String,
     url: String,
-    streaming_url: String,
+}
+
+#[derive(Template)]
+#[template(path = "directory.html")]
+struct DirectoryTemplate {
+    directory_path: String,
+    files: Vec<DirectoryFile>,
 }
 
 /// See https://ffmpeg.org/ffmpeg-filters.html#toc-Notes-on-filtergraph-escaping
@@ -62,14 +67,14 @@ fn start_time_to_seconds(start_time: &str) -> Result<u32> {
 }
 
 #[derive(Deserialize)]
-struct QueryParams {
+struct PostParams {
     subtitle: Option<String>,
     bitrate: String,
     start_time: Option<String>,
     upload_subtitle_file: Option<String>,
 }
 
-async fn file_to_stream(path: PathBuf, post_params: QueryParams) -> Result<impl Stream<Item=Result<bytes::Bytes, std::io::Error>>> {
+async fn file_to_stream(path: PathBuf, post_params: PostParams) -> Result<impl Stream<Item=Result<bytes::Bytes, std::io::Error>>> {
     let temp_dir = tempfile::tempdir()?;
     let mut child = {
         let mut subtitle = post_params.subtitle.clone();
@@ -143,8 +148,7 @@ async fn file_to_stream(path: PathBuf, post_params: QueryParams) -> Result<impl 
 
 
 async fn serve_dir(path: FullPath, data: SharedAppData) -> Result<impl warp::Reply, Infallible> {
-    let path: PathBuf = percent_encoding::percent_decode_str(&path.as_str()[1..])
-        .decode_utf8().expect("cannot decode url").parse()?;
+    let path: PathBuf = percent_encoding::percent_decode_str(&path.as_str()[1..]).decode_utf8().expect("cannot decode url").parse()?;
     log::info!("path: {:?}", path);
     let realpath = data.lock().unwrap().serving_dir.join(&path);
     log::info!("realpath: {:?}", realpath);
@@ -152,31 +156,20 @@ async fn serve_dir(path: FullPath, data: SharedAppData) -> Result<impl warp::Rep
     if directory_path == "" {
         directory_path = "root directory".to_string();
     }
-    let mut context = Context::new();
-    let mut files: Vec<_> = std::fs::read_dir(&realpath).expect("cannot read directory").into_iter()
-        .map(
-        |entry| {
-            let filename = entry.expect("cannot read file").file_name().to_str().unwrap().to_owned();
-            let url = path.join(&filename).to_str().unwrap().to_owned();
-            DirectoryFile {
-                filename: filename.clone(),
-                url: url.clone(),
-                streaming_url: url + "?bitrate=1M",
+    let mut response = DirectoryTemplate {
+        directory_path: directory_path,
+        files: std::fs::read_dir(&realpath).expect("cannot read directory").into_iter().map(
+            |entry| {
+                let filename = entry.expect("cannot read file").file_name().to_str().unwrap().to_owned();
+                DirectoryFile {
+                    filename: filename.clone(),
+                    url: path.join(filename).to_str().unwrap().to_owned(),
+                }
             }
-        }
-    ).collect();
-    files.sort_by(|a, b| { a.filename.cmp(&b.filename) });
-    context.insert("files", &files);
-    context.insert("directory_path", &directory_path);
-
-    let tera = match Tera::new("templates/*.html") {
-        Ok(t) => t,
-        Err(e) => {
-            println!("Parsing error(s): {}", e);
-            ::std::process::exit(1);
-        }
+        ).collect(),
     };
-    let response = tera.render("directory.html", &context).unwrap();
+    response.files.sort_by(|a, b| { a.filename.cmp(&b.filename) });
+    let response = response.render().unwrap();
     return Ok(hyper::Response::builder().status(hyper::StatusCode::OK).body(response).unwrap());
 }
 
@@ -189,12 +182,11 @@ async fn serve_file(path: FullPath, data: SharedAppData) -> Result<impl warp::Re
     )).expect("cannot build response"));
 }
 
-async fn serve_convert_file(path: FullPath, data: SharedAppData, params: QueryParams) -> Result<impl warp::Reply, Infallible> {
+async fn serve_convert_file(path: FullPath, data: SharedAppData, params: PostParams) -> Result<impl warp::Reply, Infallible> {
     log::info!("serving converted file");
     let path: PathBuf = percent_encoding::percent_decode_str(&path.as_str()[1..]).decode_utf8().expect("cannot decode url").parse()?;
     let realpath = data.lock().unwrap().serving_dir.join(&path);
-    return Ok(hyper::Response::builder().status(hyper::StatusCode::OK).header("Content-Type",
-                                                                              "video/x-flv")
+    return Ok(hyper::Response::builder().status(hyper::StatusCode::OK)
         .body(hyper::Body::wrap_stream(file_to_stream(realpath, params).await.expect("cannot convert file to stream"))).unwrap()
     );
 }
@@ -278,11 +270,11 @@ async fn main() -> Result<()> {
         .and(filters::with_shared_info(data.clone()))
         .and_then(serve_file);
     let convert_file_route = warp::path::full()
+        .and(warp::post())
         .and(filters::is_file(data.clone()))
         .and(filters::with_shared_info(data.clone()))
-        .and(warp::query::query())
+        .and(warp::body::json())
         .and_then(serve_convert_file);
-    warp::serve(dir_route.or(convert_file_route).or(file_route))
-        .run(args.bind_address.to_socket_addrs()?.next().expect("cannot parse bind addr")).await;
+    warp::serve(dir_route.or(convert_file_route).or(file_route)).run(args.bind_address.to_socket_addrs()?.next().expect("cannot parse bind addr")).await;
     Ok(())
 }
