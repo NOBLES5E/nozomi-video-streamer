@@ -34,11 +34,13 @@ struct Cli {
     serving_dir: String,
 }
 
+/// A struct representing a file/directory to be listed on the web UI.
 struct DirectoryFile {
     filename: String,
     url: String,
 }
 
+/// A struct representing a directory on the web UI. Serving as the data model of template directory.html.
 #[derive(Template)]
 #[template(path = "directory.html")]
 struct DirectoryTemplate {
@@ -46,6 +48,7 @@ struct DirectoryTemplate {
     files: Vec<DirectoryFile>,
 }
 
+/// Escape ffmpeg filtergraph parameter
 /// See https://ffmpeg.org/ffmpeg-filters.html#toc-Notes-on-filtergraph-escaping
 fn ffmpeg_filtergraph_escaping(raw_string: &str) -> String {
     // first level
@@ -62,11 +65,13 @@ fn ffmpeg_filtergraph_escaping(raw_string: &str) -> String {
     return result;
 }
 
+/// Parse start time like 00:11:21 to number of seconds.
 fn start_time_to_seconds(start_time: &str) -> Result<u32> {
     let time = chrono::NaiveTime::parse_from_str(start_time, "%H:%M:%S")?;
     return Ok(time.num_seconds_from_midnight());
 }
 
+/// Post parameters for the web api.
 #[derive(Deserialize)]
 struct PostParams {
     subtitle: Option<String>,
@@ -75,6 +80,7 @@ struct PostParams {
     upload_subtitle_file: Option<String>,
 }
 
+/// Stream a file.
 async fn file_to_stream(path: PathBuf, post_params: PostParams) -> Result<impl Stream<Item=Result<bytes::Bytes, std::io::Error>>> {
     let temp_dir = tempfile::tempdir()?;
     let mut child = {
@@ -147,7 +153,7 @@ async fn file_to_stream(path: PathBuf, post_params: PostParams) -> Result<impl S
     return Ok(result);
 }
 
-
+/// Show a directory on the web UI.
 async fn serve_dir(path: FullPath, data: SharedAppData) -> Result<impl warp::Reply, Infallible> {
     let path: PathBuf = percent_encoding::percent_decode_str(&path.as_str()[1..]).decode_utf8().expect("cannot decode url").parse()?;
     log::info!("path: {:?}", path);
@@ -176,6 +182,7 @@ async fn serve_dir(path: FullPath, data: SharedAppData) -> Result<impl warp::Rep
     return Ok(hyper::Response::builder().status(hyper::StatusCode::OK).body(response).unwrap());
 }
 
+/// API: serve a file.
 async fn serve_file(path: FullPath, data: SharedAppData) -> Result<impl warp::Reply, Infallible> {
     let path: PathBuf = percent_encoding::percent_decode_str(&path.as_str()[1..]).decode_utf8().expect("cannot decode url").parse()?;
     let realpath = data.lock().unwrap().serving_dir.join(&path);
@@ -185,6 +192,7 @@ async fn serve_file(path: FullPath, data: SharedAppData) -> Result<impl warp::Re
     )).expect("cannot build response"));
 }
 
+/// API: serve a file with on the fly transcoding.
 async fn serve_convert_file(path: FullPath, data: SharedAppData, params: PostParams) -> Result<impl warp::Reply, Infallible> {
     log::info!("serving converted file");
     let path: PathBuf = percent_encoding::percent_decode_str(&path.as_str()[1..]).decode_utf8().expect("cannot decode url").parse()?;
@@ -194,12 +202,14 @@ async fn serve_convert_file(path: FullPath, data: SharedAppData, params: PostPar
     );
 }
 
+/// Shared global data for the web server
 pub struct AppData {
     serving_dir: PathBuf
 }
 
 type SharedAppData = Arc<Mutex<AppData>>;
 
+/// Various filters to build the Restful API.
 mod filters {
     use crate::{AppData, SharedAppData};
     use warp::{Filter, Rejection};
