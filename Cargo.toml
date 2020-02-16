@@ -1,4 +1,5 @@
 [workspace]
 members = [
-    "nozomi-video-streamer"
+    "nozomi-video-streamer",
+    "nozomi-video-streamer-client"
 ]

@@ -22,10 +22,12 @@ jobs:
       run: cargo +nightly build --release --verbose
     - name: Run tests
       run: cargo +nightly test --verbose
-    - name: Upload artifact
-      uses: actions/upload-artifact@v1.0.0
+    - name: Release
+      uses: softprops/action-gh-release@v1
+      if: startsWith(github.ref, 'refs/tags/')
       with:
-        # Artifact name
-        name: nozomi-video-streamer
-        # Directory containing files to upload
-        path: ./target/release/nozomi-video-streamer
+        files: |
+          ./target/release/nozomi-video-streamer
+          ./target/release/nozomi-video-streamer-client
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
