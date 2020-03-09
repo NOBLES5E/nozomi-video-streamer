@@ -164,7 +164,7 @@ async fn serve_dir(path: FullPath, data: SharedAppData) -> Result<impl warp::Rep
                 log::info!("filename: {:?}", filename);
                 DirectoryFile {
                     filename: filename.clone(),
-                    url: filename.to_str().unwrap().to_owned(),
+                    url: filename.clone(),
                 }
             }
         ).collect(),
