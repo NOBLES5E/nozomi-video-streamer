@@ -161,6 +161,7 @@ async fn serve_dir(path: FullPath, data: SharedAppData) -> Result<impl warp::Rep
         files: std::fs::read_dir(&realpath).expect("cannot read directory").into_iter().map(
             |entry| {
                 let filename = entry.expect("cannot read file").file_name().to_str().unwrap().to_owned();
+                log::info!("filename: {:?}", filename);
                 DirectoryFile {
                     filename: filename.clone(),
                     url: path.join(filename).to_str().unwrap().to_owned(),
