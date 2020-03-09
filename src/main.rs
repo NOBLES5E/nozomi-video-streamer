@@ -163,10 +163,10 @@ async fn serve_dir(path: FullPath, data: SharedAppData) -> Result<impl warp::Rep
             |entry| {
                 let filename = entry.expect("cannot read file").file_name().to_str().unwrap().to_owned();
                 log::info!("filename: {:?}", filename);
-                let url = path.join(filename).to_str().unwrap();
+                let url = path.join(filename.clone()).to_str().unwrap().to_string();
                 DirectoryFile {
                     filename: filename.clone(),
-                    url: "/".to_string() + url.strip_prefix("/").unwrap_or(url),
+                    url: "/".to_string() + url.strip_prefix("/").unwrap_or(url.as_str()),
                 }
             }
         ).collect(),
