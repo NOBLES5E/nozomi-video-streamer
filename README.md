@@ -10,13 +10,13 @@ The service serves a directory, and (optionally) transcode the media on the fly.
 <img src="./figures/webui.png" width="350px"/>
 </p>
 
-### Typical use cases 
+## Typical use cases 
 
 * Downloading videos on a server with large internet throughput. Then view the video on your laptop (starting from arbitrary position of the video), optionally with lower quality to save bandwidth and get more smooth playing experience.
 * Combine with another service like qBittorrent, which downloads submitted links to a specified directory, which can be served by Nozomi Video Streamer.
 * ...
 
-### Getting started
+## Getting started
 
 Download the binary from release page. Ensure you have `ffmpeg` installed on your server.
 
