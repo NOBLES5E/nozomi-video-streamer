@@ -1,5 +1,7 @@
 #![feature(async_closure)]
 #![feature(str_strip)]
+mod helper;
+mod filters;
 
 use anyhow::Result;
 use std::io::Write;
@@ -41,29 +43,6 @@ struct DirectoryFile {
 struct DirectoryTemplate {
     directory_path: String,
     files: Vec<DirectoryFile>,
-}
-
-/// Escape ffmpeg filtergraph parameter
-/// See https://ffmpeg.org/ffmpeg-filters.html#toc-Notes-on-filtergraph-escaping
-fn ffmpeg_filtergraph_escaping(raw_string: &str) -> String {
-    // first level
-    let result = raw_string.replace(r#"'"#, r#"\'"#);
-    let result = result.replace(r#":"#, r#"\:"#);
-    // second levresult
-    let result = result.replace(r#"\"#, r#"\\"#);
-    let result = result.replace(r#"'"#, r#"\'"#);
-    let result = result.replace(r#"["#, r#"\["#);
-    let result = result.replace(r#"]"#, r#"\]"#);
-    let result = result.replace(r#","#, r#"\,"#);
-    let result = result.replace(r#";"#, r#"\;"#);
-    log::info!("ffmpeg filter graph {:?}", result);
-    result
-}
-
-/// Parse start time like 00:11:21 to number of seconds.
-fn start_time_to_seconds(start_time: &str) -> Result<u32> {
-    let time = chrono::NaiveTime::parse_from_str(start_time, "%H:%M:%S")?;
-    Ok(time.num_seconds_from_midnight())
 }
 
 /// Post parameters for the web api.
@@ -123,7 +102,7 @@ async fn file_to_stream(path: PathBuf, post_params: PostParams) -> Result<impl S
                     .arg("-ss").arg(start_time)
                     .arg("-i")
                     .arg(path.to_str().unwrap())
-                    .arg("-vf").arg(ffmpeg_filtergraph_escaping(format!("subtitles={}", temp_sub_path.to_str().unwrap()).as_str()))
+                    .arg("-vf").arg(helper::ffmpeg_filtergraph_escaping(format!("subtitles={}", temp_sub_path.to_str().unwrap()).as_str()))
                     .arg("-b:v").arg(bitrate)
                     .arg("-cpu-used").arg("-8")
                     .arg("-deadline").arg("realtime")
@@ -203,49 +182,6 @@ pub struct AppData {
 }
 
 type SharedAppData = Arc<Mutex<AppData>>;
-
-/// Various filters to build the Restful API.
-mod filters {
-    use crate::SharedAppData;
-    use warp::Filter;
-    use warp::filters::path::FullPath;
-    use std::path::PathBuf;
-    use warp::filters::BoxedFilter;
-
-    pub fn with_shared_info(db: SharedAppData) -> BoxedFilter<(SharedAppData,)> {
-        warp::any().map(move || {
-            db.clone()
-        }).boxed()
-    }
-
-    pub fn is_dir(db: SharedAppData) -> BoxedFilter<()> {
-        warp::path::full().and(with_shared_info(db)).and_then(
-            async move |path: FullPath, data: SharedAppData| {
-                let path: PathBuf = percent_encoding::percent_decode_str(&path.as_str()[1..]).decode_utf8().expect("cannot decode url").parse()?;
-                let realpath = data.lock().unwrap().serving_dir.join(&path);
-                log::info!("real dir path {:?}", realpath);
-                match realpath.is_dir() {
-                    true => Ok(()),
-                    false => Err(warp::reject::reject()),
-                }
-            }
-        ).untuple_one().boxed()
-    }
-
-    pub fn is_file(db: SharedAppData) -> BoxedFilter<()> {
-        warp::path::full().and(with_shared_info(db)).and_then(
-            async move |path: FullPath, data: SharedAppData| {
-                let path: PathBuf = percent_encoding::percent_decode_str(&path.as_str()[1..]).decode_utf8().expect("cannot decode url").parse()?;
-                let realpath = data.lock().unwrap().serving_dir.join(&path);
-                log::info!("real file path {:?}", realpath);
-                match realpath.is_file() {
-                    true => Ok(()),
-                    false => Err(warp::reject::reject()),
-                }
-            }
-        ).untuple_one().boxed()
-    }
-}
 
 #[tokio::main]
 async fn main() -> Result<()> {
