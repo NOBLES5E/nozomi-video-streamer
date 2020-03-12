@@ -22,7 +22,7 @@ The service serves a directory, a user can view the directory on the web UI, str
 
 ## Getting started
 
-Download the binaries from release page. Ensure you have `ffmpeg` installed on your server.
+Download the binaries from [release page](https://github.com/L1AN0/nozomi-video-streamer/releases). Ensure you have `ffmpeg` installed on your server.
 
 On server 
 
