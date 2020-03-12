@@ -2,6 +2,8 @@
 <img src="./figures/logo.png" width="150px"/>
 </p>
 
+<hr/>
+
 ![Rust](https://github.com/L1AN0/nozomi-video-streamer/workflows/Rust/badge.svg)
 
 A dead simple personal on demand video streaming service written in [Rust](https://www.rust-lang.org/) based on [warp](https://github.com/seanmonstar/warp) and [async/await](https://github.com/rust-lang/rust/issues/50547).
