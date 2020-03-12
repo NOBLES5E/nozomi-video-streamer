@@ -6,6 +6,7 @@ use std::process::Command;
 use serde_derive::Serialize;
 use chrono::{Duration, Timelike, Local};
 
+/// API post parameter definition
 #[derive(Serialize)]
 struct PostParams {
     subtitle: Option<String>,
@@ -59,6 +60,7 @@ async fn main() -> Result<()> {
 
     eprintln!("playing: {}", url);
 
+    // parse start time argument
     let mut start_time = chrono::NaiveTime::from_hms(0, 0, 0);
     if let Some(start_times) = args.start_time {
         for t in start_times {
