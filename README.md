@@ -16,11 +16,12 @@ Download the binary from release page. Ensure you have `ffmpeg` installed on you
 On server 
 
 ```
-./video-streamer-rs --serving-dir /data
+./nozomi-video-streamer --help
+./nozomi-video-streamer --serving-dir /data
 ```
 
 On client now you can play video with (for example)
 
 ```
-http get 'https://your-domain.com/video-name.mp4' | mpv -
+http get 'https://your-domain.com:4000/video-name.mp4' | mpv -
 ```
