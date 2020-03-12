@@ -4,13 +4,9 @@
 use anyhow::Result;
 use std::io::Write;
 use structopt::StructOpt;
-use log;
 use std::path::PathBuf;
-use askama::{Template, Error};
-use std::io::Bytes;
-use std::iter::once;
+use askama::Template;
 use std::sync::{Arc, Mutex};
-use std::ops::Deref;
 use warp::Filter;
 use warp::filters::path::FullPath;
 use chrono::{Local, Timelike};
@@ -22,7 +18,6 @@ use futures_util::StreamExt;
 use tokio::process::Command;
 use bytes::Buf;
 use std::process::Stdio;
-use std::str::FromStr;
 use tokio::time::Duration;
 
 #[derive(Debug, StructOpt, Clone)]
@@ -62,13 +57,13 @@ fn ffmpeg_filtergraph_escaping(raw_string: &str) -> String {
     let result = result.replace(r#","#, r#"\,"#);
     let result = result.replace(r#";"#, r#"\;"#);
     log::info!("ffmpeg filter graph {:?}", result);
-    return result;
+    result
 }
 
 /// Parse start time like 00:11:21 to number of seconds.
 fn start_time_to_seconds(start_time: &str) -> Result<u32> {
     let time = chrono::NaiveTime::parse_from_str(start_time, "%H:%M:%S")?;
-    return Ok(time.num_seconds_from_midnight());
+    Ok(time.num_seconds_from_midnight())
 }
 
 /// Post parameters for the web api.
@@ -143,14 +138,14 @@ async fn file_to_stream(path: PathBuf, post_params: PostParams) -> Result<impl S
     };
     let stdout = child.stdout.take().expect("cannot read child stdout");
     let reader = tokio_util::codec::FramedRead::new(stdout, tokio_util::codec::BytesCodec::new());
-    let result = reader.map(|mut x| { x.map(|mut y: bytes::BytesMut| bytes::Bytes::from(y.to_bytes())) });
-    let handler: tokio::task::JoinHandle<_> = tokio::spawn(
+    let result = reader.map(|x| { x.map(|mut y: bytes::BytesMut| bytes::Bytes::from(y.to_bytes())) });
+    let _: tokio::task::JoinHandle<_> = tokio::spawn(
         async {
             child.await.expect("child process encountered an error")
         }
     );
     tokio::time::delay_for(Duration::from_secs(5)).await;
-    return Ok(result);
+    Ok(result)
 }
 
 /// Show a directory on the web UI.
@@ -187,9 +182,9 @@ async fn serve_file(path: FullPath, data: SharedAppData) -> Result<impl warp::Re
     let path: PathBuf = percent_encoding::percent_decode_str(&path.as_str()[1..]).decode_utf8().expect("cannot decode url").parse()?;
     let realpath = data.lock().unwrap().serving_dir.join(&path);
     let file = async_std::fs::File::open(realpath).await.expect("cannot open file");
-    return Ok(hyper::Response::builder().status(hyper::StatusCode::OK).body(hyper::Body::wrap_stream(
+    Ok(hyper::Response::builder().status(hyper::StatusCode::OK).body(hyper::Body::wrap_stream(
         file.bytes().map(|x| { x.map(|y| bytes::Bytes::from(vec![y])) })
-    )).expect("cannot build response"));
+    )).expect("cannot build response"))
 }
 
 /// API: serve a file with on the fly transcoding.
@@ -197,9 +192,9 @@ async fn serve_convert_file(path: FullPath, data: SharedAppData, params: PostPar
     log::info!("serving converted file");
     let path: PathBuf = percent_encoding::percent_decode_str(&path.as_str()[1..]).decode_utf8().expect("cannot decode url").parse()?;
     let realpath = data.lock().unwrap().serving_dir.join(&path);
-    return Ok(hyper::Response::builder().status(hyper::StatusCode::OK)
+    Ok(hyper::Response::builder().status(hyper::StatusCode::OK)
         .body(hyper::Body::wrap_stream(file_to_stream(realpath, params).await.expect("cannot convert file to stream"))).unwrap()
-    );
+    )
 }
 
 /// Shared global data for the web server
@@ -211,9 +206,8 @@ type SharedAppData = Arc<Mutex<AppData>>;
 
 /// Various filters to build the Restful API.
 mod filters {
-    use crate::{AppData, SharedAppData};
-    use warp::{Filter, Rejection};
-    use std::convert::Infallible;
+    use crate::SharedAppData;
+    use warp::Filter;
     use warp::filters::path::FullPath;
     use std::path::PathBuf;
     use warp::filters::BoxedFilter;
