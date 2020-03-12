@@ -20,7 +20,7 @@ The service serves a directory, and (optionally) transcode the media on the fly.
 
 ## Getting started
 
-Download the binary from release page. Ensure you have `ffmpeg` installed on your server.
+Download the binaries from release page. Ensure you have `ffmpeg` installed on your server.
 
 On server 
 
@@ -34,3 +34,17 @@ On client now you can play video with (for example)
 ```
 http get 'https://your-domain.com:4000/video-name.mp4' | mpv -
 ```
+
+or copy the video url (under linux with `xclip` installed) using the client for more customized options:
+
+```
+./nozomi-video-streamer-client --help
+# this will play the video with 2M bitrate with the url in your clipboard
+./nozomi-video-streamer-client --bitrate 2M | mpv - 
+```
+
+There are other useful optional arguments like
+
+- `--url`: specify video url manually rather than read from clipboard
+- `--start-time`: start playing a video from an offset
+- `--sub-file`: upload a `.ass` subtitle file and play the video with the uploaded subtitle
