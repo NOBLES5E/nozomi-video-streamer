@@ -1,6 +1,6 @@
 ## Nozomi Video Streamer
 
-A dead simple on demand video streaming service written in rust.
+A dead simple on demand video streaming service written in [Rust](https://www.rust-lang.org/) based on [warp](https://github.com/seanmonstar/warp) and [async/await](https://github.com/rust-lang/rust/issues/50547).
 
 The service serves a directory, and (optionally) transcode the media on the fly.
 
