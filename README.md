@@ -1,10 +1,14 @@
+<p align="center">
 <img src="./figures/logo.png" width="150px"/>
+</p>
 
 A dead simple personal on demand video streaming service written in [Rust](https://www.rust-lang.org/) based on [warp](https://github.com/seanmonstar/warp) and [async/await](https://github.com/rust-lang/rust/issues/50547).
 
 The service serves a directory, and (optionally) transcode the media on the fly. The web UI looks like
 
+<p align="center">
 <img src="./figures/webui.png" width="250px"/>
+</p>
 
 Typical use cases include
 
