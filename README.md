@@ -10,7 +10,7 @@ Typical use cases include
 
 ### Getting started
 
-Download the binary from release page.
+Download the binary from release page. Ensure you have `ffmpeg` installed on your server.
 
 On server 
 
