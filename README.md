@@ -6,7 +6,7 @@ A dead simple personal on demand video streaming service written in [Rust](https
 
 The service serves a directory, and (optionally) transcode the media on the fly. The web UI looks like
 
-<p align="center">
+<p align="left">
 <img src="./figures/webui.png" width="350px"/>
 </p>
 
