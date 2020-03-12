@@ -46,5 +46,5 @@ or copy the video url (under linux with `xclip` installed) using the client for 
 There are other useful optional arguments like
 
 - `--url`: specify video url manually rather than read from clipboard (if you don't have `xclip` installed you may find this option useful)
-- `--start-time`: start playing a video from an offset, the format is `HH:MM:SS`
+- `--start-time`: start playing a video from an offset, the format is `HH:MM:SS`, you can also do things like `--start-time 00:01:02 00:02:01`, which is equivalent to a single `--start-time 00:03:03`
 - `--sub-file`: upload a `.ass` subtitle file and play the video with the uploaded subtitle
