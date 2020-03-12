@@ -1,6 +1,6 @@
 [package]
-name = "video-streamer-rs"
-version = "0.5.5"
+name = "nozomi-video-streamer"
+version = "0.5.6"
 authors = ["Xiangru Lian <admin@mail.xrlian.com>"]
 edition = "2018"
 
