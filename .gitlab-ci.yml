@@ -18,7 +18,7 @@ build:
     - cargo +nightly build --release
   artifacts:
     paths:
-      - ./target/release/video-streamer-rs
+      - ./target/release/nozomi-video-streamer
 
 release:
   stage: release
@@ -30,6 +30,7 @@ release:
     # - docker login -u $CI_REGISTRY_USER -p $CI_REGISTRY_PASSWORD $CI_REGISTRY
     - echo -n $CI_JOB_TOKEN | docker login -u gitlab-ci-token --password-stdin $CI_REGISTRY
   script:
-    - docker build --pull -t $CONTAINER_BRANCH_IMAGE .
+    - cp ./target/release/nozomi-video-streamer nozomi-video-streamer/nozomi-video-streamer
+    - cd nozomi-video-streamer && docker build --pull -t $CONTAINER_BRANCH_IMAGE .
     - docker push $CONTAINER_BRANCH_IMAGE
 
